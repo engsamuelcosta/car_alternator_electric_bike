@@ -1,14 +1,14 @@
+
+
 /*  
+Criado por : Samuel Alencar da Costa
+samuel.alencar85@gmail.com 
 Ligação dos fios I2c
 SDA - Porta analógica A4  
 SCL - porta analógica A5 
 
-
-
-
 */
-//#include <LiquidCrystal.h> Excluir no código definitivo
-
+ 
 
 
 #include <LiquidCrystal_I2C.h>
