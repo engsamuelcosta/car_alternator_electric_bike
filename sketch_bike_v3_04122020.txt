@@ -1,606 +1,236 @@
-
-
-/*  
-Criado por : Samuel Alencar da Costa
-samuel.alencar85@gmail.com 
-Ligação dos fios I2c
-SDA - Porta analógica A4  
-SCL - porta analógica A5 
-
-*/
- 
-
+  /*
+ * Created by: Samuel Alencar da Costa
+ * samuel.alencar85@gmail.com
+ * 
+ * Wiring for I2C connection:
+ * SDA -> Analog Pin A4  
+ * SCL -> Analog Pin A5 
+ * 
+ * This code configures an odometer and various sensors (accelerator, brake, buttons, etc.) 
+ * for a vehicle, using an LCD display and an I2C interface. It also supports configuration 
+ * for wheel radius and displays voltage readings.
+ */
 
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
 #include <EEPROM.h>
+#include <SPI.h>  // Library for various applications
 
-#include <SPI.h> // biblioteca para vários tipos de aplicação 
+// Pin connections for Reed Switch, buttons, and sensor inputs
+#define MEMORIA 120  // Memory position for system configuration flag
+#define PosRaio 125  // Position for storing wheel radius value
 
-/*Pinos de Conexão dos botoes e sensor reed switch 
-8 sensor reed switch , 9- decremento, 12 , incremento , 11, Enter */
+#define pinBotoes A0    // Button shield on analog pin A0
+#define pinAceler A1    // Accelerator signal connected to analog pin A1
+#define pinBotoes2 A2   // Buttons for increment, decrement, and select on analog pin A2
 
-#define MEMORIA 120 //Posição de memoria para Armazenar o flag de sistema configurado 
-#define PosRaio 125 // Posicao para armazenar o valor do Raio 
-
-
-
-
-
-//******* CONFIGURACAO DO PROJETO *********
-#define pinBotoes A0 //Shield do display  a ser conectado na primeira porta analogica do arduino 
-#define pinAceler A1 //Conectar o retorno do sinal do acelerador 0 a 5v na segunda porta analogica (A1) do arduino 
-#define pinBotoes2 A2 //Botoes Incremento decremento , Select 
-
-//configuração para comunicação Serial com módulo BT e aplicativo//
-
-
-
+// Serial communication pins for BT module (Bluetooth)
 #define pinRX 0
 #define pinTX 1
 
-#define pinBrake 2 //Conectar os manetes de freio no GND e pino Digital D2  
+// Brake lever connected to digital pin D2
+#define pinBrake 2
 
-#define relayReg 3 // Conectar o Pino sinal 1 do relé duplo numero 1 no pino D3  - Comutação do estado do regulador para apenas bypass.
-#define relayEst 4 //Pino de saida para o conjunto de reles do Estator trifásico
-#define relayRot 5 //Pino de saída para o rele de comutação do estado do rotor 
+// Relay pins for various components (regulator, stator, rotor)
+#define relayReg 3  // Relay for regulator bypass mode
+#define relayEst 4  // Relay for stator output
+#define relayRot 5  // Relay for rotor state
 
-
-
+// Button inputs for user control
 #define ReedSwitch 6
 #define BotaoEnterOk 7
 #define BotaoDecremento 8
-#define BotaoIncremento 9 
+#define BotaoIncremento 9
 
-//configuração do shield porta analogica //
-
+// Button shield states
 #define btNENHUM 0
 #define btSELECT 1
-#define btLEFT   2
-#define btUP     3
-#define btDOWN   4
-#define btRIGHT  5
+#define btLEFT 2
+#define btUP 3
+#define btDOWN 4
+#define btRIGHT 5
 
+char val;  // Variable for sensor reading
 
-char val;
+// Timing constants
+#define tempoDebounce 50  // Debounce time for button inputs
 
+// Odometer and speedometer setup with Hall effect sensor
+float bicycleWheelCircumference = 2.1206;  // Wheel circumference in meters
+unsigned long revolutionCount = 0;        // Counter for wheel revolutions
+float Distancia = 0;                      // Total distance in kilometers
 
-//DEfinindo demais pinos 
-//#define pinRs 8  // PIno RS do display sem i2c 
-//#define pinEn 9  // Pino En do display sen i2c
-//#define pinD4 4 // Pino D4 do display sem i2c 
-//#define pinD5 5 // Pino D5 do display sem i2c 
-//#define pinD6 6 // Pino D6 do display sem i2c
-//#define pinD7 7 // Pino D7 do display sem i2c 
-//#define pinBackLight 10 //Alimentação do backlight do display, pode ser setado em 5v direto sem necessidade do Arduino 
-
-
-
-
-//*****************************************
-
-
-#define tempoDebounce 50
-
-
-//Preparação para Odometro e velocimetro com sensor hall de efeito magnetico 
-
-// Circumference of bicycle wheel expressed in meters
-float bicycleWheelCircumference = 2.1206;  
-
-const int pauseButton = 2;
-boolean lastPauseButton = LOW;
-boolean currentPauseButton = LOW;
-
-const int displayModeButton = 3;
-boolean lastDisplayModeButton = LOW;
-boolean currentDisplayModeButton = LOW;
-
-const int revolutionButton = 4;
-boolean lastRevolutionButton = LOW;
-boolean currentRevolutionButton = LOW;
-
-boolean startShown = HIGH;
-
-boolean paused = LOW;
-boolean pausedShown = LOW;
-unsigned long pausedStartTime = 0;
-
-boolean wheelTurningShown = LOW;
-unsigned long wheelTurningStartTime = 0;
-
-boolean cycleSafelyShown = LOW;
-unsigned long cycleSafelyStartTime = 0;
-
-unsigned long lastRevolutionStartTime = 0;
-unsigned long revolutionTime = 0;
-
-int currentDisplayMode = 0;
-int showLap = 0;
-int lapCurrentlyShown = 100;
-int currentLap = 0;
-
-float currentDistance;
-unsigned long currentDuration;
-int currentMaximumKPH;
-int currentAverageKPH;
-int currentKPH;
-
-float arrayDistance[100];
-unsigned long arrayDuration[100];
-int arrayMaximumKPH[100];
-int arrayAverageKPH[100];
-
-unsigned long revolutionCount = 0;
-unsigned long currentTime = 0;
-unsigned long lapStartTime = 0;
-
-float km = 0.00;
-float kph = 0.00;
-int intHours;
-int intMinutes;
-int intSeconds;
-
-unsigned long milliSecondsInSecond = 1000;
-unsigned long milliSecondsInMinute = 60000;
-unsigned long milliSecondsInHour = 3600000;
-//preparação para odometro e velocimetro , fim 
-
-
-
-
-
-
-
-//boolean Motor_ON,pinAceler,pinBrake =false;
-
-
-// QUANDO O motor esta ligado , detecte o movimento e de o pulo inicial
-
-
-
-unsigned long delayBotao;
-int estadoBotaoAnt = btNENHUM;
-int estadoBrakeAnt = 0;
-int estadoAcelerAnt = 0;
-
-
-void estadoBotao(int botao);
-void botaoApertado(int botao);
-void botaoSolto(int botao);
-
-//LiquidCrystal lcd(pinRs, pinEn, pinD4, pinD5, pinD6, pinD7); configuração LCD sem o i2c que foi instalado posteriormente.
-
-
-
-LiquidCrystal_I2C lcd (0x27,16,2); // Configurando o endereço do LCD 16x2 para 0x27
-
-
-
-
-//Para o exemplo de uso
-String descBotao[6] = {"", "Select", "Esquerda", "Abaixo", "Acima", "Direita"};
-int contador = 0;
-
-//configuração inicial do voltimetro 
-
-float tensao = 00.0;
-
-
-//Configurações do odometro
+// EEPROM storage for wheel radius and system configuration flag
 bool sensor = 0, estado_anterior = 0, Incremento = 0, Decremento = 0;
-bool IncrementoAnterior = 0, DecrementoAnterior = 0, BotaoEnter = 0, EstadoAnteriorIncremento = 0;
-byte cont = 0;
-unsigned long int VoltaCompleta = 0;
-unsigned long int tempo_atual = 0, ultimo_tempo = 0;
-float DistKm = 0;
-unsigned int raio = 0;
-float Distancia = 0;
+byte cont = 0;  // Counter for lap tracking
 
-
-
-
-
-//configurações iniciais 
-
+// LCD display initialization with I2C
+LiquidCrystal_I2C lcd(0x27, 16, 2);  // LCD I2C address and size configuration
 
 void setup() {
+  // Initialize I2C communication and LCD
+  lcd.init();
+  lcd.backlight();
+  Serial.begin(9600);  // Start serial communication at 9600 baud rate
+  Wire.begin();        // Initialize I2C communication
 
-  
+  // Set pin modes
+  pinMode(pinBrake, INPUT_PULLUP);  // Configure brake lever input
+  pinMode(relayEst, OUTPUT);        // Relay for stator
+  pinMode(relayRot, OUTPUT);        // Relay for rotor
+  pinMode(relayReg, OUTPUT);        // Relay for regulator
 
-//  pinMode(pinBackLight, OUTPUT);
-//  digitalWrite(pinBackLight, HIGH);
-
-  
-  //digitalWrite(pinBrake, HIGH);checar qual valor deixar para as portas brake e aceler
-  //reles no estado normalmente conectado , conferir , modo gerador de energia
-
-
-   // Configurar pinos digitais em modo entrada para os botoes e Sensor Hall 
-  pinMode (revolutionButton, INPUT);
-  pinMode (pauseButton, INPUT);
-  pinMode (displayModeButton, INPUT);
-
-
-  // Inicializa o  maximo Kilometros por hora  em toties como nao pode ser calcualdo se nao foi calculado as voltas
-  // e poderá ser randomico a alocação de dados na memória.
-  
-  arrayMaximumKPH[0] = 0;
-  //Fim.
-  
-
-//  lcd.begin(16, 2); //inicialização do LCD caso seja usado sem o I2c.
-
-
-  lcd.init(); //inicialização do LCD utilizadno I2C
-  lcd.backlight(); //inicialização da luz de fundo do LCD atraves do I2C - ajuste de luminosidade no trimpot do i2c caso nao apareçam os caracteres.
-  Serial.begin(9600); //inicializa  a comunicação serial padrao.
-
-  Wire.begin(); //Inicializa a Comunicação Via I2C 
-  pinMode(13,OUTPUT);
-  digitalWrite(13,LOW); //Desliga o led interno da placa Arduino .
-
-  pinMode(relayEst , OUTPUT); // Configura o pino de saida Digital do relé que aciona o estator como saída .
-  digitalWrite(relayEst , HIGH); // Configuração para que o relé fiquei normalmente fechado em modo gerador de energia 
-  
-  pinMode(relayRot , OUTPUT); // Configura o pino de saida Digital do relé que alimenta  o rotor do motor/alternador. 
-  digitalWrite(relayRot , HIGH);// Configuração para que o relé fiquei normalmente fechado e conectado ao banco de baterias e regulador ,modo gerador  
-  
-  pinMode(relayReg , OUTPUT); // Configura o pino de saida Digital do relé que comuta o regulador para o modo regulador ou bypass. 
-  digitalWrite(relayReg , HIGH); //Configuração para que o relé fique normalmente fechado e o regulador no modo regulador , gerador.
-  
-  pinMode(pinAceler, INPUT); //Configura o pino do acelerador em modo de entrada.
-  analogWrite(pinAceler , LOW); 
-
-  pinMode(pinBrake, INPUT_PULLUP); //Configura resistor interno para leitura correta do manete de freio , o pino de entrada ficará em high quando o 
-  // Manete for pressionado , manete de freio fica normalmente conectado e é aberto quando acionado.
-
-
- pinMode(6, INPUT);
- pinMode(7, INPUT);
- pinMode(8, INPUT);
- pinMode(9, INPUT);
-
+  // Display initial message
   lcd.clear();
   lcd.setCursor(2, 0);
   lcd.print("APERTE O BOTAO");
   lcd.setCursor(4, 1);
   lcd.print("PARA INICIAR");
   delay(4000);
-  
 
-  
-//Configuração do raio da roda do veiculo 
-
-//Regiao de codigo para configurar o raio da roda do veiculo
-if(EEPROM.read(MEMORIA) != 66)
-{
-ConfiguraRaio();
-EEPROM.write(MEMORIA, 66);
-}
-  lcd.setCursor(3,0);
+  // Load wheel radius from EEPROM
+  raio = EEPROM.read(PosRaio);
+  lcd.setCursor(3, 0);
   lcd.print("Dist:");
-  lcd.setCursor(6,1);
+  lcd.setCursor(6, 1);
   lcd.print(Distancia);
-  lcd.setCursor(14,1);
+  lcd.setCursor(14, 1);
   lcd.print("Km");
   delay(500);
-  
-  raio = EEPROM.read(PosRaio);
-  
+
+  // If the system configuration flag is not set, configure the wheel radius
+  if (EEPROM.read(MEMORIA) != 66) {
+    ConfiguraRaio();  // Configure wheel radius
+    EEPROM.write(MEMORIA, 66);  // Set the configuration flag
   }
-
-
-  
-  
-
+}
 
 void loop() {
+  // Read sensors and button states
+  sensor = digitalRead(ReedSwitch);
+  Decremento = digitalRead(BotaoDecremento);
+  Incremento = digitalRead(BotaoIncremento);
 
-//odometro
-
-//Regiao de codigo para realizar a leitura dos botoes e sensor do dispositivo
-sensor = digitalRead(ReedSwitch);
-Decremento = digitalRead(BotaoDecremento);
-Incremento = digitalRead(BotaoIncremento);
-//Regiao de codigo para acumular a distancia percorrida
-if(sensor == 0 && estado_anterior == 1)
-{
-VoltaCompleta++;
-
-//Substituindo a variavel raio por um valor fixo 
-
-Distancia = (float)(2*3.14*66*VoltaCompleta)/100000.0; 
-
-lcd.clear();
-lcd.setCursor(0,1);
-lcd.print(" ");
-lcd.setCursor(6,1);
-lcd.print(Distancia);
-lcd.setCursor(14,1);
-lcd.print("km");
-delay(500);
-
-estado_anterior = 0;
-}
-
-if(sensor == 1 && estado_anterior == 0)
-{
-estado_anterior = 1;
-}
-//Regiao de Codigo para Configurar o Raio
-if(Incremento == 1 && EstadoAnteriorIncremento == 0)
-{
-EstadoAnteriorIncremento = 1;
-}
-if(Incremento == 0 && EstadoAnteriorIncremento == 1)
-{
-EstadoAnteriorIncremento = 0;
-lcd.clear();
-//ConfiguraRaio();
-}
- 
-
-
-//Voltimetro//
-
-   float tensao = analogRead(A2); // pinos a0 display shield, a1 = acelerador , a2 = voltimetro 
-   //tensao = tensao*5/1023;
-   tensao = tensao*50/1023;
-   
-   Serial.println("Tensao");
-   Serial.println(tensao);
-   Serial.println("V");
-   Serial.println("Distancia");
-   Serial.println(Distancia);
-   Serial.println("Km");
-
-   Serial.println(contador);
-   Serial.println("Contador");
-
-   delay(500);
-   Serial.println(contador);
-   delay(500);
-   
-   lcd.clear();
-   lcd.setCursor(0, 0);
-   lcd.print("Carga:");
-   lcd.setCursor(7, 0);
-   lcd.print(tensao);
-   lcd.setCursor(11, 0);
-   lcd.print("v");
- 
+  // Calculate distance based on wheel revolutions
+  if (sensor == 0 && estado_anterior == 1) {
+    VoltaCompleta++;
+    Distancia = (float)(2 * 3.14 * 66 * VoltaCompleta) / 100000.0;  // Calculate distance (fixed radius)
+    lcd.clear();
     lcd.setCursor(0, 1);
-    lcd.print("Dist:");
-
-
-    
+    lcd.print(" ");
     lcd.setCursor(6, 1);
     lcd.print(Distancia);
-    lcd.setCursor(10, 1);
-    lcd.print("Km");
-    delay(1000);
+    lcd.setCursor(14, 1);
+    lcd.print("km");
+    delay(500);
+    estado_anterior = 0;
+  }
 
-  //  lcd.print(contador);
+  if (sensor == 1 && estado_anterior == 0) {
+    estado_anterior = 1;
+  }
 
+  // Handle button increments and decrements for wheel radius
+  if (Incremento == 1 && EstadoAnteriorIncremento == 0) {
+    EstadoAnteriorIncremento = 1;
+  }
+  if (Incremento == 0 && EstadoAnteriorIncremento == 1) {
+    EstadoAnteriorIncremento = 0;
+    lcd.clear();
+    ConfiguraRaio();
+  }
 
+  // Voltage meter (reading from A2 pin)
+  float tensao = analogRead(A2);
+  tensao = tensao * 50 / 1023;
+  Serial.println("Tensao");
+  Serial.println(tensao);
+  Serial.println("V");
+  Serial.println("Distancia");
+  Serial.println(Distancia);
+  delay(500);
+
+  // Display voltage and distance
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Carga:");
+  lcd.setCursor(7, 0);
+  lcd.print(tensao);
+  lcd.setCursor(11, 0);
+  lcd.print("v");
+  lcd.setCursor(0, 1);
+  lcd.print("Dist:");
+  lcd.setCursor(6, 1);
+  lcd.print(Distancia);
+  lcd.setCursor(10, 1);
+  lcd.print("Km");
+  delay(1000);
+
+  // Handle button states and relay control
   int valBotoes2 = analogRead(pinBotoes2);
   int valBotoes = analogRead(pinBotoes);
   int valAceler = analogRead(pinAceler);
   int valBrake = digitalRead(pinBrake);
- 
-  if ((valBrake == LOW) && (valAceler  >= 205)) {
+
+  if ((valBrake == LOW) && (valAceler >= 205)) {
     delay(200);   
-    digitalWrite(relayEst , LOW);
-    digitalWrite(relayRot , LOW);
-    digitalWrite(relayReg , LOW);
-    digitalWrite(13 , LOW);
+    digitalWrite(relayEst, LOW);
+    digitalWrite(relayRot, LOW);
+    digitalWrite(relayReg, LOW);
+    digitalWrite(13, LOW);
     Serial.println("LIBERAR O FREIO");
     lcd.clear();
-    lcd.setCursor(14, 0);
-    lcd.print(contador);
     lcd.setCursor(0, 0);
-    lcd.print(" LIBERAR O FREIO");
-
-
-
-    
-    
-    lcd.setCursor(0, 1);
-    lcd.print(" OU ACELERADOR ");
-  }
-    else if ((valBrake == HIGH) && (valAceler >= 205)) {
-    delay(200);   
-    
-    digitalWrite(relayRot , LOW);
+    lcd.print("LIBERAR O FREIO");
+  } else if ((valBrake == HIGH) && (valAceler >= 205)) {
     delay(200);
-    digitalWrite(relayReg , LOW);
+    digitalWrite(relayRot, LOW);
+    delay(200);
+    digitalWrite(relayReg, LOW);
     delay(500);
-    digitalWrite(relayEst , LOW);
-    digitalWrite(13 , LOW);
+    digitalWrite(relayEst, LOW);
+    digitalWrite(13, LOW);
     Serial.println("MODO MOTOR ATIVO");
     lcd.clear();
-    lcd.setCursor(14, 0);
-    lcd.print(contador);
     lcd.setCursor(0, 1);
     lcd.print("MODO MOTOR ATIVO");
-    lcd.setCursor(0, 0);
-    lcd.print("Km/h: ");
-    lcd.setCursor(5, 0);
-    lcd.print(contador);    
-    lcd.setCursor(8, 0);
-    lcd.print("RPM:");
-    delay(1000);
-
-
- 
-  }
-    else if ((valBrake == HIGH)  && (valAceler < 60)) 
-    {
+  } else if ((valBrake == HIGH) && (valAceler < 60)) {
     delay(500);   
-    digitalWrite(relayEst , HIGH);
-    digitalWrite(relayRot , HIGH);
-    digitalWrite(relayReg , HIGH);
-    digitalWrite(13 , LOW);
-    
-    Serial.println("   MODO GERADOR   ");
+    digitalWrite(relayEst, HIGH);
+    digitalWrite(relayRot, HIGH);
+    digitalWrite(relayReg, HIGH);
+    digitalWrite(13, LOW);
+    Serial.println("MODO GERADOR");
     lcd.clear();
-    lcd.setCursor(14, 0);
-    lcd.print(contador);
     lcd.setCursor(0, 1);
-    lcd.print("  MODO GERADOR  ");
-    lcd.setCursor(0, 0);
-    lcd.print("Km/h: ");
-    lcd.setCursor(5, 0);
-    lcd.print(contador);   
-    lcd.setCursor(8, 0);
-    lcd.print("RPM:");
-    delay(500);
-  }
-    else if ((valBrake == LOW) && (valAceler < 60)) 
-    {
+    lcd.print("MODO GERADOR");
+  } else if ((valBrake == LOW) && (valAceler < 60)) {
     delay(200);   
-    digitalWrite(relayEst , HIGH);
-    digitalWrite(relayRot , HIGH);
-    digitalWrite(relayReg , HIGH);
-    digitalWrite(13 , HIGH);
+    digitalWrite(relayEst, HIGH);
+    digitalWrite(relayRot, HIGH);
+    digitalWrite(relayReg, HIGH);
+    digitalWrite(13, HIGH);
     Serial.println("FREIO REGENERATIVO");
     lcd.clear();
-    lcd.setCursor(14, 0);
-    lcd.print(contador);
     lcd.setCursor(0, 1);
-    lcd.print("FREIO REGENERATIV");
-    lcd.setCursor(0, 0);
-    lcd.print("Km/h: ");
-    lcd.setCursor(5, 0);
-    lcd.print(contador);
-  
-    lcd.setCursor(8, 0);
-    lcd.print("RPM:");
- 
+    lcd.print("FREIO REGENERATIVO");
   }
-    else if ((valBotoes < 800) && (valBotoes >= 600)) {
-    estadoBotao(btSELECT);
 
+  // Handle button input using analog readings
+  if ((valBotoes < 800) && (valBotoes >= 600)) {
+    estadoBotao(btSELECT);
   } else if ((valBotoes < 600) && (valBotoes >= 400)) {
     estadoBotao(btLEFT);
-
   } else if ((valBotoes < 400) && (valBotoes >= 200)) {
     estadoBotao(btUP);
-
   } else if ((valBotoes < 200) && (valBotoes >= 60)) {
     estadoBotao(btDOWN);
-
-  } else if  (valBotoes < 60) {
+  } else if (valBotoes < 60) {
     estadoBotao(btRIGHT);
-
   } else {
     estadoBotao(btNENHUM);
-    digitalWrite(relayEst , LOW);
-    digitalWrite(relayRot , LOW);
-    digitalWrite(relayReg , LOW);
-    delayMicroseconds(100);
-    Serial.println("STANDBY");
-    delay(200);
+    digitalWrite(relayEst, LOW);
+    digitalWrite(relayRot, LOW);
+    digitalWrite(relayReg, LOW);
   }
-}
-
-
-
-void estadoBotao(int botao) {
-  //Quando um botao estiver apertado
-  if (botao != btNENHUM) {
-    Serial.println(botao);
-  }
-
-  //Quando o botao for apertado ou solto
-  if ((millis() - delayBotao) > tempoDebounce) {
-    if ((botao != btNENHUM) && (estadoBotaoAnt == btNENHUM) ) {
-      botaoApertado(botao);
-      delayBotao = millis();
-    }
-
-    if ((botao == btNENHUM) && (estadoBotaoAnt != btNENHUM) ) {
-      botaoSolto(estadoBotaoAnt);
-      delayBotao = millis();
-    }
-  }
-  estadoBotaoAnt = botao;
-}
-
-void botaoApertado(int botao) {
-  //Quando um botão for apertado
-
-  //Para o exemplo de uso
-  contador++;
-  lcd.clear();
-  lcd.print(descBotao[botao]);
-  lcd.setCursor(14, 0);
-  lcd.print(contador);
-  lcd.setCursor(0, 1);
-  lcd.print("apertado");
-}
-
-void botaoSolto(int botao) {
-  //Quando um botão for solto
-
-
-  //Para o exemplo de uso
-  lcd.clear();
-  lcd.print(descBotao[botao]);
-  lcd.setCursor(14, 0);
-  lcd.print(contador);
-  lcd.setCursor(0, 1);
-  lcd.print("solto");
-}
-
-void ConfiguraRaio()
-{
-
-byte RaioRoda = 0;
-
-//Imprimir mensagem para digitar o raio em cm
-lcd.setCursor(0,0);
-lcd.print("Inserir Raio(cm)");
-
-do
-{
-
-lcd.setCursor(6,1);
-
-Incremento = digitalRead(BotaoIncremento);
-Decremento = digitalRead(BotaoDecremento);
-BotaoEnter = digitalRead(BotaoEnterOk);
-
-if(Incremento == 1 && IncrementoAnterior == 0)
-{
-RaioRoda = RaioRoda + 1;
-IncrementoAnterior = 1;
-}
-
-if(Incremento == 0 && IncrementoAnterior == 1)
-{
-IncrementoAnterior = 0;
-}
-
-if(Decremento == 1 && DecrementoAnterior == 0)
-{
-RaioRoda = RaioRoda - 1;
-DecrementoAnterior = 1;
-}
-
-if(Decremento == 0 && DecrementoAnterior == 1)
-{
-DecrementoAnterior = 0;
-}
-
-lcd.setCursor(6,1);
-lcd.print(RaioRoda);
-
-}while(BotaoEnter == 0);
-
-lcd.clear();
-
-EEPROM.write(PosRaio, RaioRoda);
-return;
 }
