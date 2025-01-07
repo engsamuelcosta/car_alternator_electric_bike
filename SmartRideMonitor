@@ -1,0 +1,182 @@
+/*
+  Criado por : Samuel Alencar da Costa
+  samuel.alencar85@gmail.com
+
+  Ligações:
+  SDA - Porta analógica A4
+  SCL - Porta analógica A5
+*/
+
+#include <LiquidCrystal_I2C.h>
+#include <Wire.h>
+#include <EEPROM.h>
+#include <SPI.h>
+
+// Configuração dos pinos
+#define MEMORIA 120
+#define PosRaio 125
+
+#define pinBotoes A0
+#define pinAceler A1
+#define pinBotoes2 A2
+
+#define pinRX 0
+#define pinTX 1
+
+#define pinBrake 2
+#define relayReg 3
+#define relayEst 4
+#define relayRot 5
+
+#define ReedSwitch 6
+#define BotaoEnterOk 7
+#define BotaoDecremento 8
+#define BotaoIncremento 9
+
+// Botões do shield
+#define btNENHUM 0
+#define btSELECT 1
+#define btLEFT   2
+#define btUP     3
+#define btDOWN   4
+#define btRIGHT  5
+
+// Configurações gerais
+#define tempoDebounce 50
+#define CIRCUNFERENCIA_RODA 2.1206 // Em metros
+
+// Variáveis globais
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+unsigned long delayBotao;
+int estadoBotaoAnt = btNENHUM;
+float tensao = 0.0;
+float distancia = 0.0;
+unsigned long voltaCompleta = 0;
+bool estadoAnteriorSensor = false;
+bool estadoAnteriorIncremento = false;
+bool estadoAnteriorDecremento = false;
+
+// Protótipos das funções
+void inicializarSistema();
+void configurarRaio();
+void estadoBotao(int botao);
+void atualizarDisplay();
+
+void setup() {
+  inicializarSistema();
+
+  // Configura o raio salvo na EEPROM, caso necessário
+  if (EEPROM.read(MEMORIA) != 66) {
+    configurarRaio();
+    EEPROM.write(MEMORIA, 66);
+  }
+  distancia = EEPROM.read(PosRaio);
+}
+
+void loop() {
+  // Leitura dos sensores
+  bool sensor = digitalRead(ReedSwitch);
+  bool incremento = digitalRead(BotaoIncremento);
+  bool decremento = digitalRead(BotaoDecremento);
+
+  // Processa o sensor para calcular a distância
+  if (sensor == LOW && estadoAnteriorSensor == HIGH) {
+    voltaCompleta++;
+    distancia = (2 * 3.14 * 66 * voltaCompleta) / 100000.0;
+    atualizarDisplay();
+    estadoAnteriorSensor = LOW;
+  } else if (sensor == HIGH) {
+    estadoAnteriorSensor = HIGH;
+  }
+
+  // Configuração do raio
+  if (incremento && !estadoAnteriorIncremento) {
+    estadoAnteriorIncremento = true;
+    configurarRaio();
+  } else if (!incremento) {
+    estadoAnteriorIncremento = false;
+  }
+
+  // Atualização do voltímetro
+  tensao = analogRead(pinBotoes2) * 50.0 / 1023.0;
+
+  // Atualização do display
+  atualizarDisplay();
+}
+
+void inicializarSistema() {
+  // Inicialização do hardware
+  lcd.init();
+  lcd.backlight();
+  Serial.begin(9600);
+  Wire.begin();
+
+  pinMode(relayEst, OUTPUT);
+  pinMode(relayRot, OUTPUT);
+  pinMode(relayReg, OUTPUT);
+  pinMode(pinAceler, INPUT);
+  pinMode(pinBrake, INPUT_PULLUP);
+  pinMode(ReedSwitch, INPUT);
+  pinMode(BotaoEnterOk, INPUT);
+  pinMode(BotaoDecremento, INPUT);
+  pinMode(BotaoIncremento, INPUT);
+
+  // Estados iniciais
+  digitalWrite(relayEst, HIGH);
+  digitalWrite(relayRot, HIGH);
+  digitalWrite(relayReg, HIGH);
+
+  lcd.clear();
+  lcd.setCursor(2, 0);
+  lcd.print("APERTE O BOTAO");
+  lcd.setCursor(4, 1);
+  lcd.print("PARA INICIAR");
+  delay(4000);
+}
+
+void configurarRaio() {
+  int raio = 0;
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Configurar Raio:");
+
+  while (!digitalRead(BotaoEnterOk)) {
+    if (digitalRead(BotaoIncremento) && !estadoAnteriorIncremento) {
+      raio++;
+      estadoAnteriorIncremento = true;
+    } else if (!digitalRead(BotaoIncremento)) {
+      estadoAnteriorIncremento = false;
+    }
+
+    if (digitalRead(BotaoDecremento) && !estadoAnteriorDecremento) {
+      raio--;
+      estadoAnteriorDecremento = true;
+    } else if (!digitalRead(BotaoDecremento)) {
+      estadoAnteriorDecremento = false;
+    }
+
+    lcd.setCursor(6, 1);
+    lcd.print(raio);
+  }
+
+  EEPROM.write(PosRaio, raio);
+  lcd.clear();
+}
+
+void atualizarDisplay() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Carga:");
+  lcd.setCursor(7, 0);
+  lcd.print(tensao);
+  lcd.setCursor(11, 0);
+  lcd.print("V");
+
+  lcd.setCursor(0, 1);
+  lcd.print("Dist:");
+  lcd.setCursor(6, 1);
+  lcd.print(distancia);
+  lcd.setCursor(10, 1);
+  lcd.print("Km");
+}
